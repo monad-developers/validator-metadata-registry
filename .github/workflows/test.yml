@@ -1,0 +1,57 @@
+name: CI
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: monad-foundry project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Restore cached monad-foundry binaries
+        id: foundry-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.foundry/bin
+          # Bump this version to refresh monad-foundry binaries.
+          key: monad-foundry-${{ runner.os }}-stable-monad-v1
+
+      - name: Install monad-foundry (cache miss)
+        if: steps.foundry-cache.outputs.cache-hit != 'true'
+        env:
+          # Pinned to a specific commit on category-labs/foundry@monad to avoid
+          # piping an unverified remote script into the shell.
+          INSTALLER_COMMIT: 5db76009a572e9d8b64fa7dd0ac899e7c4cb5b7d
+          INSTALLER_SHA256: 72b447ab1463b1f9ee1d7a20263495777565a5c0f7131e4f515af781e8a643de
+        run: |
+          export FOUNDRY_DIR="$HOME/.foundry"
+          curl -fsSL "https://raw.githubusercontent.com/category-labs/foundry/$INSTALLER_COMMIT/foundryup/install" -o installer.sh
+          echo "$INSTALLER_SHA256  installer.sh" | sha256sum --check
+          bash installer.sh
+          "$FOUNDRY_DIR/bin/foundryup" -n monad
+
+      - name: Add monad-foundry to PATH
+        run: echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+
+      - name: Show Forge version
+        run: forge --version
+
+      - name: Check formatting
+        run: forge fmt --check src test script
+
+      - name: Build
+        run: forge build --sizes
+
+      - name: Test
+        run: forge test -vvv
