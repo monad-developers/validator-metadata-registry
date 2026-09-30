@@ -1,132 +1,100 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.28;
+pragma solidity ^0.8.15;
 
-/**
- * @title IMonadStaking
- * @notice Interface for the Monad Staking Precompile at address 0x0000000000000000000000000000000000001000
- * @dev This precompile manages validator registration, delegation, and rewards
- */
 interface IMonadStaking {
-    /**
-     * @notice Complete validator information from the precompile
-     * @dev Matches Python SDK format: 12 fields returned from getValidator
-     * @param authority Address that controls this validator
-     * @param flags Validator flags/status
-     * @param consensusStake Stake used for consensus
-     * @param snapshotStake Snapshot stake value
-     * @param stake Total stake delegated to this validator
-     * @param accRewardPerToken Accumulator value for reward calculations
-     * @param consensusCommission Commission rate for consensus
-     * @param snapshotCommission Commission rate snapshot
-     * @param commission Current commission rate
-     * @param unclaimedRewards Rewards earned but not yet claimed
-     * @param secpPubKey SECP256k1 public key for execution layer
-     * @param blsPubKey BLS public key for consensus layer
-     */
-    struct ValidatorInfo {
-        address authority;
-        uint256 flags;
-        uint256 consensusStake;
-        uint256 snapshotStake;
-        uint256 stake;
-        uint256 accRewardPerToken;
-        uint256 consensusCommission;
-        uint256 snapshotCommission;
-        uint256 commission;
-        uint256 unclaimedRewards;
-        bytes secpPubKey;
-        bytes blsPubKey;
-    }
+    function addValidator(bytes calldata payload, bytes calldata signedSecpMessage, bytes calldata signedBlsMessage)
+        external
+        payable
+        returns (uint64 validatorId);
 
-    /**
-     * @notice Delegator information for a specific validator
-     * @param stake Amount of MON delegated
-     * @param accumulator Accumulator value at time of last update
-     * @param unclaimedRewards Rewards earned but not yet claimed
-     */
-    struct DelegatorInfo {
-        uint256 stake;
-        uint256 accumulator;
-        uint256 unclaimedRewards;
-    }
-
-    /**
-     * @notice Register a new validator with SECP and BLS public keys
-     * @return success Whether the registration was successful
-     */
-    function addValidator() external returns (bool success);
-
-    /**
-     * @notice Delegate MON tokens to a validator
-     * @param validatorId The ID of the validator to delegate to
-     * @return success Whether the delegation was successful
-     */
     function delegate(uint64 validatorId) external payable returns (bool success);
 
-    /**
-     * @notice Initiate undelegation of staked MON
-     * @param validatorId The ID of the validator to undelegate from
-     * @param amount Amount of MON to undelegate
-     * @param withdrawalType Type of withdrawal (0 = standard, 1 = expedited)
-     * @return success Whether the undelegation was initiated successfully
-     */
-    function undelegate(uint64 validatorId, uint256 amount, uint8 withdrawalType) external returns (bool success);
+    function undelegate(uint64 validatorId, uint256 amount, uint8 withdrawId) external returns (bool success);
 
-    /**
-     * @notice Complete undelegation after withdrawal delay
-     * @param validatorId The ID of the validator
-     * @param withdrawalType Type of withdrawal that was initiated
-     * @return success Whether the withdrawal was successful
-     */
-    function withdraw(uint64 validatorId, uint8 withdrawalType) external returns (bool success);
-
-    /**
-     * @notice Convert accumulated rewards into additional stake
-     * @param validatorId The ID of the validator
-     * @return success Whether compounding was successful
-     */
     function compound(uint64 validatorId) external returns (bool success);
 
-    /**
-     * @notice Claim accumulated rewards
-     * @param validatorId The ID of the validator
-     * @return success Whether the claim was successful
-     */
+    function withdraw(uint64 validatorId, uint8 withdrawId) external returns (bool success);
+
     function claimRewards(uint64 validatorId) external returns (bool success);
 
-    /**
-     * @notice Change validator commission rate
-     * @param validatorId The ID of the validator
-     * @param newCommission New commission rate in basis points
-     * @return success Whether the commission change was successful
-     */
-    function changeCommission(uint64 validatorId, uint256 newCommission) external returns (bool success);
+    function changeCommission(uint64 validatorId, uint256 commission) external returns (bool success);
 
-    /**
-     * @notice Distribute external rewards (tips) to delegators
-     * @param validatorId The ID of the validator
-     * @return success Whether the reward distribution was successful
-     */
     function externalReward(uint64 validatorId) external payable returns (bool success);
 
-    /**
-     * @notice Get complete validator information
-     * @param validatorId The ID of the validator
-     * @return info Complete validator information
-     */
-    function getValidator(uint64 validatorId) external returns (ValidatorInfo memory info);
+    function getValidator(uint64 validatorId)
+        external
+        returns (
+            address authAddress,
+            uint64 flags,
+            uint256 stake,
+            uint256 accRewardPerToken,
+            uint256 commission,
+            uint256 unclaimedRewards,
+            uint256 consensusStake,
+            uint256 consensusCommission,
+            uint256 snapshotStake,
+            uint256 snapshotCommission,
+            bytes memory secpPubkey,
+            bytes memory blsPubkey
+        );
 
-    /**
-     * @notice Get delegator information for a specific validator
-     * @param validatorId The ID of the validator
-     * @param delegator Address of the delegator
-     * @return info Delegator stake and rewards information
-     */
-    function getDelegator(uint64 validatorId, address delegator) external returns (DelegatorInfo memory info);
+    function getDelegator(uint64 validatorId, address delegator)
+        external
+        returns (
+            uint256 stake,
+            uint256 accRewardPerToken,
+            uint256 unclaimedRewards,
+            uint256 deltaStake,
+            uint256 nextDeltaStake,
+            uint64 deltaEpoch,
+            uint64 nextDeltaEpoch
+        );
 
-    /**
-     * @notice Get current epoch information
-     * @return epoch Current epoch number
-     */
-    function getEpoch() external returns (uint256 epoch);
+    function getWithdrawalRequest(uint64 validatorId, address delegator, uint8 withdrawId)
+        external
+        returns (uint256 withdrawalAmount, uint256 accRewardPerToken, uint64 withdrawEpoch);
+
+    function getConsensusValidatorSet(uint32 startIndex)
+        external
+        returns (bool isDone, uint32 nextIndex, uint64[] memory valIds);
+
+    function getSnapshotValidatorSet(uint32 startIndex)
+        external
+        returns (bool isDone, uint32 nextIndex, uint64[] memory valIds);
+
+    function getExecutionValidatorSet(uint32 startIndex)
+        external
+        returns (bool isDone, uint32 nextIndex, uint64[] memory valIds);
+
+    function getDelegations(address delegator, uint64 startValId)
+        external
+        returns (bool isDone, uint64 nextValId, uint64[] memory valIds);
+
+    function getDelegators(uint64 validatorId, address startDelegator)
+        external
+        returns (bool isDone, address nextDelegator, address[] memory delegators);
+
+    function getEpoch() external returns (uint64 epoch, bool inEpochDelayPeriod);
+
+    function getProposerValId() external returns (uint64 val_id);
+
+    function syscallOnEpochChange(uint64 epoch) external;
+
+    function syscallReward(address blockAuthor) external;
+
+    function syscallSnapshot() external;
+
+    event ValidatorRewarded(uint64 indexed validatorId, address indexed from, uint256 amount, uint64 epoch);
+    event ValidatorCreated(uint64 indexed validatorId, address indexed authAddress, uint256 commission);
+    event ValidatorStatusChanged(uint64 indexed validatorId, uint64 flags);
+    event Delegate(uint64 indexed validatorId, address indexed delegator, uint256 amount, uint64 activationEpoch);
+    event Undelegate(
+        uint64 indexed validatorId, address indexed delegator, uint8 withdrawId, uint256 amount, uint64 activationEpoch
+    );
+    event Withdraw(
+        uint64 indexed validatorId, address indexed delegator, uint8 withdrawId, uint256 amount, uint64 withdrawEpoch
+    );
+    event ClaimRewards(uint64 indexed validatorId, address indexed delegator, uint256 amount, uint64 epoch);
+    event CommissionChanged(uint64 indexed validatorId, uint256 oldCommission, uint256 newCommission);
+    event EpochChanged(uint64 oldEpoch, uint64 newEpoch);
 }

@@ -27,12 +27,23 @@ contract ValidatorMetadataTest is Test {
 
     /// Make the staking precompile return `authority` from `getValidator(validatorId).authority`.
     function _mockAuthority(uint64 validatorId, address authority) internal {
-        IMonadStaking.ValidatorInfo memory info;
-        info.authority = authority;
         vm.mockCall(
             STAKING_PRECOMPILE,
             abi.encodeWithSelector(IMonadStaking.getValidator.selector, validatorId),
-            abi.encode(info)
+            abi.encode(
+                authority,
+                uint64(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                uint256(0),
+                bytes(""),
+                bytes("")
+            )
         );
     }
 
@@ -106,6 +117,63 @@ contract ValidatorMetadataTest is Test {
         vm.expectRevert(ValidatorMetadata.Unauthorized.selector);
         vm.prank(AUTHORITY_A);
         registry.setMetadata(VALIDATOR_ID, _sampleMetadata());
+    }
+
+    // ─── staking precompile failures ─────────────────────────────────────
+
+    function _mockGetValidatorRevert(uint64 validatorId) internal {
+        vm.mockCallRevert(
+            STAKING_PRECOMPILE,
+            abi.encodeWithSelector(IMonadStaking.getValidator.selector, validatorId),
+            bytes("precompile reverted")
+        );
+    }
+
+    function _mockGetValidatorReturn(uint64 validatorId, bytes memory ret) internal {
+        vm.mockCall(STAKING_PRECOMPILE, abi.encodeWithSelector(IMonadStaking.getValidator.selector, validatorId), ret);
+    }
+
+    // A precompile revert bubbles up verbatim through the high-level `getValidator` call.
+    function test_SetMetadata_PrecompileReverts_BubblesRevertData() public {
+        _mockGetValidatorRevert(VALIDATOR_ID);
+
+        vm.expectRevert(bytes("precompile reverted"));
+        vm.prank(AUTHORITY_A);
+        registry.setMetadata(VALIDATOR_ID, _sampleMetadata());
+    }
+
+    // Return data too short to decode as the 12-value tuple reverts in the ABI decoder.
+    function test_SetMetadata_PrecompileReturnsEmpty_Reverts() public {
+        _mockGetValidatorReturn(VALIDATOR_ID, "");
+
+        vm.expectRevert();
+        vm.prank(AUTHORITY_A);
+        registry.setMetadata(VALIDATOR_ID, _sampleMetadata());
+    }
+
+    function test_SetMetadata_PrecompileReturnsShortData_Reverts() public {
+        // 31 bytes: one short of a full word.
+        _mockGetValidatorReturn(VALIDATOR_ID, new bytes(31));
+
+        vm.expectRevert();
+        vm.prank(AUTHORITY_A);
+        registry.setMetadata(VALIDATOR_ID, _sampleMetadata());
+    }
+
+    function test_SetApproval_PrecompileReverts_BubblesRevertData() public {
+        _mockGetValidatorRevert(VALIDATOR_ID);
+
+        vm.expectRevert(bytes("precompile reverted"));
+        vm.prank(AUTHORITY_A);
+        registry.setApproval(VALIDATOR_ID, address(0xD1), true);
+    }
+
+    function test_SetApproval_PrecompileReturnsShortData_Reverts() public {
+        _mockGetValidatorReturn(VALIDATOR_ID, new bytes(31));
+
+        vm.expectRevert();
+        vm.prank(AUTHORITY_A);
+        registry.setApproval(VALIDATOR_ID, address(0xD1), true);
     }
 
     // ─── setMetadata: empty name (MRC case 3) ────────────────────────────
