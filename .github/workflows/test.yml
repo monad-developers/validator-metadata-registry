@@ -9,7 +9,7 @@ on:
 
 jobs:
   check:
-    name: monad-foundry project
+    name: foundry project
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,30 +19,12 @@ jobs:
           persist-credentials: false
           submodules: recursive
 
-      - name: Restore cached monad-foundry binaries
-        id: foundry-cache
-        uses: actions/cache@v4
+      # Upstream Foundry >= 1.8.0 ships first-class Monad execution (`--network monad`),
+      # including the staking precompile at 0x1000. Pinned so CI matches local dev.
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
         with:
-          path: ~/.foundry/bin
-          # Bump this version to refresh monad-foundry binaries.
-          key: monad-foundry-${{ runner.os }}-stable-monad-v1
-
-      - name: Install monad-foundry (cache miss)
-        if: steps.foundry-cache.outputs.cache-hit != 'true'
-        env:
-          # Pinned to a specific commit on category-labs/foundry@monad to avoid
-          # piping an unverified remote script into the shell.
-          INSTALLER_COMMIT: 5db76009a572e9d8b64fa7dd0ac899e7c4cb5b7d
-          INSTALLER_SHA256: 72b447ab1463b1f9ee1d7a20263495777565a5c0f7131e4f515af781e8a643de
-        run: |
-          export FOUNDRY_DIR="$HOME/.foundry"
-          curl -fsSL "https://raw.githubusercontent.com/category-labs/foundry/$INSTALLER_COMMIT/foundryup/install" -o installer.sh
-          echo "$INSTALLER_SHA256  installer.sh" | sha256sum --check
-          bash installer.sh
-          "$FOUNDRY_DIR/bin/foundryup" -n monad
-
-      - name: Add monad-foundry to PATH
-        run: echo "$HOME/.foundry/bin" >> "$GITHUB_PATH"
+          version: v1.8.3
 
       - name: Show Forge version
         run: forge --version
@@ -53,5 +35,12 @@ jobs:
       - name: Build
         run: forge build --sizes
 
-      - name: Test
+      - name: Unit tests
         run: forge test -vvv
+
+      # Real staking precompile. REQUIRE_MONAD_PRECOMPILE makes the integration suite fail
+      # instead of silently skipping if the precompile is not present.
+      - name: Integration tests (Monad network)
+        env:
+          REQUIRE_MONAD_PRECOMPILE: "true"
+        run: forge test --network monad --match-contract Integration -vvv

@@ -52,10 +52,18 @@ contract ValidatorMetadata is IValidatorMetadata {
     /// @param authority The caller that performed the deletion (validator's authority or an approved delegate).
     event MetadataDeleted(uint64 indexed validatorId, address indexed authority);
 
+    /// Returns the validator's authority from the staking precompile.
+    /// @dev Destructuring the 12-value `getValidator` return only compiles with `via_ir = true`
+    ///      (see foundry.toml); the legacy pipeline hits "stack too deep". Reverts from the
+    ///      precompile and malformed return data bubble up through the high-level call.
+    function _authorityOf(uint64 validatorId) private returns (address authority) {
+        (authority,,,,,,,,,,,) = IMonadStaking(STAKING_PRECOMPILE).getValidator(validatorId);
+    }
+
     /// Restricts to the validator's current authority, or an address the authority has approved
     /// for this specific validator.
     modifier onlyAuthorizedWriter(uint64 validatorId) {
-        address authority = IMonadStaking(STAKING_PRECOMPILE).getValidator(validatorId).authority;
+        address authority = _authorityOf(validatorId);
         require(msg.sender == authority || _approvals[validatorId][authority][msg.sender], Unauthorized());
         _;
     }
@@ -142,7 +150,7 @@ contract ValidatorMetadata is IValidatorMetadata {
     /// @param approved True to grant, false to revoke.
     function setApproval(uint64 validatorId, address delegate, bool approved) external {
         require(delegate != address(0) && delegate != msg.sender, InvalidDelegate());
-        address authority = IMonadStaking(STAKING_PRECOMPILE).getValidator(validatorId).authority;
+        address authority = _authorityOf(validatorId);
         require(msg.sender == authority, Unauthorized());
         if (_approvals[validatorId][authority][delegate] == approved) return;
         _approvals[validatorId][authority][delegate] = approved;
